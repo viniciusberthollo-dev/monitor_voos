@@ -1,0 +1,31 @@
+name: Monitor Voos Diretos GRU-MAD 2027
+
+on:
+  schedule:
+    # Roda todo dia às 09:00 e às 21:00 (horário de Brasília / UTC-3)
+    - cron: "0 12,0 * * *"
+  workflow_dispatch:
+
+jobs:
+  checar-tarifas:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências
+        run: pip install requests
+
+      - name: Executar monitoramento
+        env:
+          AMADEUS_CLIENT_ID: ${{ secrets.AMADEUS_CLIENT_ID }}
+          AMADEUS_CLIENT_SECRET: ${{ secrets.AMADEUS_CLIENT_SECRET }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: python monitor_voos.py
