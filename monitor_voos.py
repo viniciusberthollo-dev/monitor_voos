@@ -9,6 +9,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 PRECO_ALVO_BRL = 4800.00  # Alerta imediato se qualquer voo direto ficar <= este valor
 MIN_DIAS_CORRIDOS = 18
 MAX_DIAS_CORRIDOS = 25
+LIMITE_BUSCAS_POR_EXECUCAO = 16
 
 # Feriados nacionais no Brasil (setembro a novembro de 2027)
 FERIADOS_BR_2027 = {
@@ -30,11 +31,11 @@ def contar_dias_uteis(ida: date, volta: date) -> int:
     return uteis
 
 
-def gerar_melhores_combinacoes(limite_buscas: int = 8) -> list[dict]:
+def gerar_melhores_combinacoes(limite_buscas: int = LIMITE_BUSCAS_POR_EXECUCAO) -> list[dict]:
     """
-    Gera todas as combinações entre 18 e 25 dias corridos (set/out/nov 2027),
-    sem restrição de dia da semana, e seleciona as que consomem menos dias úteis
-    para respeitar a cota mensal da SerpApi.
+    Gera combinações entre 18 e 25 dias corridos (set/out/nov 2027),
+    sem restrição de dia da semana, priorizando menor quantidade de dias úteis
+    e maior duração para extrair o máximo dos feriados.
     """
     inicio_busca = date(2027, 9, 1)
     fim_busca = date(2027, 11, 30)
@@ -48,7 +49,6 @@ def gerar_melhores_combinacoes(limite_buscas: int = 8) -> list[dict]:
                 break
 
             uteis = contar_dias_uteis(dia_ida, dia_volta)
-            # Índice de eficiência: prioriza menor nº de dias úteis e maior duração
             candidatas.append({
                 "ida": dia_ida.isoformat(),
                 "volta": dia_volta.isoformat(),
@@ -56,18 +56,19 @@ def gerar_melhores_combinacoes(limite_buscas: int = 8) -> list[dict]:
                 "volta_br": dia_volta.strftime("%d/%m"),
                 "dias_corridos": duracao,
                 "dias_uteis": uteis,
-                "ratio": uteis / duracao,
             })
         dia_ida += timedelta(days=1)
 
-    # Ordena pelas combinações que consomem menos dias úteis (e depois maior duração)
+    # Prioriza menos dias úteis e maior duração
     candidatas.sort(key=lambda x: (x["dias_uteis"], -x["dias_corridos"]))
 
-    # Seleciona as top combinações diversificando datas (evita datas quase idênticas)
     selecionadas = []
     for c in candidatas:
-        if any(abs((date.fromisoformat(c["ida"]) - date.fromisoformat(s["ida"])).days) < 3
-               and c["dias_corridos"] == s["dias_corridos"] for s in selecionadas):
+        if any(
+            abs((date.fromisoformat(c["ida"]) - date.fromisoformat(s["ida"])).days) < 2
+            and c["dias_corridos"] == s["dias_corridos"]
+            for s in selecionadas
+        ):
             continue
         selecionadas.append(c)
         if len(selecionadas) >= limite_buscas:
@@ -92,7 +93,7 @@ def eh_segunda_manha_brt() -> bool:
 
 
 def buscar_voos_diretos():
-    combinacoes = gerar_melhores_combinacoes(limite_buscas=8)
+    combinacoes = gerar_melhores_combinacoes(LIMITE_BUSCAS_POR_EXECUCAO)
     resultados_validos = []
 
     for comb in combinacoes:
@@ -132,11 +133,9 @@ def buscar_voos_diretos():
                 "cia": cia,
             })
 
-    # Ordena exatamente conforme solicitado:
-    # 1º Menor valor | 2º Menor quantidade de dias úteis | 3º Maior nº de dias corridos
+    # Ordenação: 1º Menor valor | 2º Menor quantidade de dias úteis | 3º Maior duração
     resultados_validos.sort(key=lambda x: (x["preco"], x["dias_uteis"], -x["dias_corridos"]))
 
-    # Remove duplicatas idênticas de (cia, ida, volta)
     unicos = []
     vistos = set()
     for r in resultados_validos:
@@ -164,7 +163,7 @@ def buscar_voos_diretos():
             linhas_rank = [
                 f"{idx}. *R$ {r['preco']:,.2f}* ({r['cia']})\n"
                 f"   📅 {r['ida_br']} a {r['volta_br']} — {r['dias_corridos']}d corridos | *{r['dias_uteis']}d úteis*"
-                for idx, r in enumerate(unicos[:12], start=1)
+                for idx, r in enumerate(unicos[:15], start=1)
             ]
             msg = (
                 "📊 *Ranking Voos Diretos GRU → MAD (18 a 25 dias)*\n"
