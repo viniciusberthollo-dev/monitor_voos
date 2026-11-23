@@ -76,20 +76,17 @@ def formatar_status(cfg: dict) -> str:
         f"• *Preço alvo:* R$ {cfg['preco_alvo_brl']:,.2f}\n"
         f"• *Consultas por rodada:* {cfg['limite_buscas']}\n\n"
         "*Comandos disponíveis:*\n"
-        "`/corridos 18 22` — mín e máx dias corridos\n"
-        "`/uteis 10 13` — mín e máx dias úteis\n"
-        "`/alvo 4300` — preço alvo em R$\n"
+        "`/corridos 18 25` — mín e máx dias corridos\n"
+        "`/uteis 10 15` — mín e máx dias úteis\n"
+        "`/alvo 4500` — preço alvo em R$\n"
         "`/meses 9,10,11` — meses de 2027\n"
         "`/config` — ver configuração atual\n"
-        "`/buscar` — rodar busca agora"
+        "`/buscar` — rodar busca agora\n"
+        "`/reset` — restaurar valores padrão"
     )
 
 
 def processar_comandos_telegram(cfg: dict) -> tuple[dict, bool, bool]:
-    """
-    Lê novas mensagens do Telegram e atualiza a configuração.
-    Retorna: (cfg_atualizada, houve_alteracao, disparar_busca_agora)
-    """
     if not TELEGRAM_TOKEN:
         return cfg, False, False
 
@@ -129,6 +126,11 @@ def processar_comandos_telegram(cfg: dict) -> tuple[dict, bool, bool]:
         cmd_lower = texto.lower()
 
         if cmd_lower.startswith("/start") or cmd_lower.startswith("/config"):
+            responder_status = True
+
+        elif cmd_lower.startswith("/reset"):
+            cfg = dict(CONFIG_PADRAO)
+            houve_alteracao = True
             responder_status = True
 
         elif cmd_lower.startswith("/corridos"):
@@ -213,7 +215,6 @@ def gerar_combinacoes(cfg: dict) -> list[dict]:
             if dia_volta > fim_busca:
                 break
 
-            # Garante que ida ou volta esteja nos meses escolhidos
             if (dia_ida.month not in meses_validos) and (dia_volta.month not in meses_validos):
                 continue
 
@@ -231,7 +232,6 @@ def gerar_combinacoes(cfg: dict) -> list[dict]:
             })
         dia_ida += timedelta(days=1)
 
-    # Prioriza menor quantidade de dias úteis e maior duração dentro da faixa
     candidatas.sort(key=lambda x: (x["dias_uteis"], -x["dias_corridos"]))
 
     selecionadas = []
@@ -260,11 +260,8 @@ def executar():
     cfg, houve_alteracao, disparar_busca = processar_comandos_telegram(cfg)
 
     evento_manual = os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch"
-    if not (eh_segunda_manha_brt() or evento_manual or disparar_busca):
-        # Execução normal de rotina: faz busca direta usando os filtros atuais
-        pass
-
     combinacoes = gerar_combinacoes(cfg)
+
     if not combinacoes:
         enviar_telegram(
             "⚠️ Nenhuma combinação de datas atendeu simultaneamente aos filtros de "
@@ -311,7 +308,6 @@ def executar():
                 "cia": cia,
             })
 
-    # Ordena por: 1º Menor valor | 2º Menor quantidade de dias úteis | 3º Maior duração
     resultados.sort(key=lambda x: (x["preco"], x["dias_uteis"], -x["dias_corridos"]))
 
     unicos = []
