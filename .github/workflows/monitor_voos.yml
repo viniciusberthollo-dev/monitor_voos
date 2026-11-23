@@ -2,7 +2,7 @@ name: Monitor Voos Diretos GRU-MAD 2027
 
 on:
   schedule:
-    # Roda a cada 2 dias às 09:00 (horário de Brasília / UTC-3) -> ~90 buscas/mês (dentro do plano grátis)
+# Roda a cada 2 dias às 09:00 (horário de Brasília / UTC-3) -> 15 execuções * 16 buscas = 240/mês
     - cron: "0 12 */2 * *"
   workflow_dispatch:
 
