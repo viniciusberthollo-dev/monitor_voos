@@ -2,8 +2,7 @@ import os
 from datetime import datetime, timezone, timedelta
 import requests
 
-AMADEUS_CLIENT_ID = os.getenv("AMADEUS_CLIENT_ID")
-AMADEUS_CLIENT_SECRET = os.getenv("AMADEUS_CLIENT_SECRET")
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -19,27 +18,6 @@ JANELAS_2027 = [
     {"nome": "Novembro (01/11 a 18/11 - 18d / 11d úteis)", "ida": "2027-11-01", "volta": "2027-11-18"},
 ]
 
-NOMES_CIAS = {
-    "LA": "LATAM",
-    "IB": "Iberia",
-    "UX": "Air Europa",
-    "CA": "Air China",
-}
-
-
-def obter_token_amadeus() -> str:
-    resp = requests.post(
-        "https://api.amadeus.com/v1/security/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": AMADEUS_CLIENT_ID,
-            "client_secret": AMADEUS_CLIENT_SECRET,
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()["access_token"]
-
 
 def enviar_telegram(mensagem: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -53,52 +31,51 @@ def enviar_telegram(mensagem: str):
 def eh_segunda_manha_brt() -> bool:
     fuso_brt = timezone(timedelta(hours=-3))
     agora_brt = datetime.now(fuso_brt)
-    # Segunda-feira (weekday == 0) na execução da manhã (entre 07h e 12h BRT)
     return agora_brt.weekday() == 0 and 7 <= agora_brt.hour <= 12
 
 
 def buscar_voos_diretos():
-    token = obter_token_amadeus()
-    headers = {"Authorization": f"Bearer {token}"}
-
     alertas_imediato = []
     linhas_relatorio = []
 
     for janela in JANELAS_2027:
         params = {
-            "originLocationCode": "GRU",
-            "destinationLocationCode": "MAD",
-            "departureDate": janela["ida"],
-            "returnDate": janela["volta"],
-            "adults": 1,
-            "nonStop": "true",
-            "currencyCode": "BRL",
-            "max": 15,
+            "engine": "google_flights",
+            "departure_id": "GRU",
+            "arrival_id": "MAD",
+            "outbound_date": janela["ida"],
+            "return_date": janela["volta"],
+            "currency": "BRL",
+            "hl": "pt-br",
+            "gl": "br",
+            "stops": "1",  # 1 = Apenas voos diretos (nonstop) na SerpApi
+            "api_key": SERPAPI_KEY,
         }
-        resp = requests.get(
-            "https://api.amadeus.com/v2/shopping/flight-offers",
-            headers=headers,
-            params=params,
-            timeout=30,
-        )
 
+        resp = requests.get("https://serpapi.com/search.json", params=params, timeout=30)
         if resp.status_code != 200:
-            linhas_relatorio.append(f"• *{janela['nome']}*\n  _Sem tarifas abertas no sistema ainda_")
+            linhas_relatorio.append(f"• *{janela['nome']}*\n  _Erro ou data ainda não aberta no Google Flights_")
             continue
 
-        dados = resp.json().get("data", [])
-        if not dados:
-            linhas_relatorio.append(f"• *{janela['nome']}*\n  _Nenhum voo direto encontrado_")
+        dados = resp.json()
+        voos = dados.get("best_flights", []) + dados.get("other_flights", [])
+
+        if not voos:
+            linhas_relatorio.append(f"• *{janela['nome']}*\n  _Sem voos diretos abertos ainda_")
             continue
 
         melhores_por_cia = {}
-        for oferta in dados:
-            preco = float(oferta["price"]["total"])
-            cia_cod = oferta["validatingAirlineCodes"][0]
-            cia_nome = NOMES_CIAS.get(cia_cod, cia_cod)
+        for opcao in voos:
+            preco = opcao.get("price")
+            trechos = opcao.get("flights", [])
+            if not preco or not trechos:
+                continue
 
-            if cia_nome not in melhores_por_cia or preco < melhores_por_cia[cia_nome]:
-                melhores_por_cia[cia_nome] = preco
+            cia = trechos[0].get("airline", "Desconhecida")
+            preco_float = float(preco)
+
+            if cia not in melhores_por_cia or preco_float < melhores_por_cia[cia]:
+                melhores_por_cia[cia] = preco_float
 
         ordenado = sorted(melhores_por_cia.items(), key=lambda x: x[1])
         detalhes_cias = []
@@ -112,7 +89,6 @@ def buscar_voos_diretos():
 
         linhas_relatorio.append(f"• *{janela['nome']}*\n" + "\n".join(detalhes_cias))
 
-    # 1. Disparo imediato se alguma tarifa bater a meta
     if alertas_imediato:
         msg_alerta = (
             f"🚨 *ALERTA DE PREÇO: Voo Direto GRU → MAD (≤ R$ {PRECO_ALVO_BRL:,.0f})*\n\n"
@@ -120,7 +96,6 @@ def buscar_voos_diretos():
         )
         enviar_telegram(msg_alerta)
 
-    # 2. Relatório semanal toda segunda-feira pela manhã (ou se rodar manualmente via workflow_dispatch)
     forcar_relatorio = os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch"
     if eh_segunda_manha_brt() or forcar_relatorio:
         msg_semanal = (
