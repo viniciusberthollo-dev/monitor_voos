@@ -2,8 +2,8 @@ name: Monitor Voos Diretos GRU-MAD 2027
 
 on:
   schedule:
-    # Roda todo dia às 09:00 e às 21:00 (horário de Brasília / UTC-3)
-    - cron: "0 12,0 * * *"
+    # Roda a cada 2 dias às 09:00 (horário de Brasília / UTC-3) -> ~90 buscas/mês (dentro do plano grátis)
+    - cron: "0 12 */2 * *"
   workflow_dispatch:
 
 jobs:
@@ -23,8 +23,7 @@ jobs:
 
       - name: Executar monitoramento
         env:
-          AMADEUS_CLIENT_ID: ${{ secrets.AMADEUS_CLIENT_ID }}
-          AMADEUS_CLIENT_SECRET: ${{ secrets.AMADEUS_CLIENT_SECRET }}
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
