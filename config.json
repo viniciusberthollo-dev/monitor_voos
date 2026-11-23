@@ -1,0 +1,9 @@
+{
+  "min_dias_corridos": 18,
+  "max_dias_corridos": 25,
+  "min_dias_uteis": 10,
+  "max_dias_uteis": 15,
+  "preco_alvo_brl": 4500.0,
+  "meses": [9, 10, 11],
+  "limite_buscas": 16
+}
